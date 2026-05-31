@@ -1,4 +1,4 @@
-# 🤖 ReAct RAG Agent
+# ReAct RAG Agent
 
 **Multi-step Retrieval-Augmented Generation with ReAct reasoning loop**
 
