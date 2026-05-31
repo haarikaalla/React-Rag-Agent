@@ -155,8 +155,4 @@ react-rag-agent/
 
 ---
 
-## Author
 
-**Haarika Alla** — [LinkedIn](https://www.linkedin.com/in/haarika-alla-791880288) · [GitHub](https://github.com/haarikaalla)
-
-*Final-year B.Tech (Data Science), Manipal Institute of Technology, Bengaluru*
