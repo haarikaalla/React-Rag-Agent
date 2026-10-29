@@ -55,6 +55,15 @@ QUESTION: {question}
 
 Answer:"""
 
+ABSTAIN = "I could not find supporting evidence in the uploaded document."
+
+
+def _has_evidence(tool_name: str, observation: str) -> bool:
+    """Only successful retrieval observations can unlock a final answer."""
+    if tool_name not in {"retrieve", "summarise", "clarify"}:
+        return False
+    return not observation.startswith(("[ToolError]", "No relevant content", "No content found", "Still no relevant"))
+
 
 # ── Parser helpers ────────────────────────────────────────────────────────
 
@@ -123,6 +132,7 @@ class ReActAgent:
     def _react_loop(self, question: str) -> Dict[str, Any]:
         trace: List[Dict[str, str]] = []
         total_tokens = 0
+        evidence_count = 0
 
         prompt = REACT_SYSTEM.format(
             tools=self.tools.tool_descriptions(),
@@ -143,11 +153,11 @@ class ReActAgent:
                 thought = _extract_thought(response)
                 if thought:
                     trace.append({"type": "thought", "content": thought})
-                answer = _parse_final_answer(response)
+                answer = _parse_final_answer(response) if evidence_count else ABSTAIN
                 return {
                     "answer":       answer,
                     "trace":        trace,
-                    "num_sources":  self._count_retrieved(trace),
+                    "num_sources":  evidence_count,
                     "total_tokens": total_tokens,
                     "steps":        step + 1,
                 }
@@ -160,12 +170,10 @@ class ReActAgent:
                 trace.append({"type": "thought", "content": thought})
 
             if not tool_name:
-                # No parseable action — treat remaining text as final answer
-                answer = response.split("Thought:")[-1].strip()
                 return {
-                    "answer":       answer or "Could not determine an answer.",
+                    "answer":       ABSTAIN,
                     "trace":        trace,
-                    "num_sources":  self._count_retrieved(trace),
+                    "num_sources":  evidence_count,
                     "total_tokens": total_tokens,
                     "steps":        step + 1,
                 }
@@ -174,6 +182,8 @@ class ReActAgent:
 
             # Call tool
             observation = self.tools.call(tool_name, tool_input)
+            if _has_evidence(tool_name, observation):
+                evidence_count += 1
             trace.append({"type": "observation", "content": observation[:800]})  # truncate for display
 
             # Extend scratchpad
@@ -183,6 +193,15 @@ class ReActAgent:
                 f"\nAction Input: {tool_input}"
                 f"\nObservation: {observation}\n"
             )
+
+        if not evidence_count:
+            return {
+                "answer": ABSTAIN,
+                "trace": trace,
+                "num_sources": 0,
+                "total_tokens": total_tokens,
+                "steps": self.max_steps,
+            }
 
         # Max steps reached — ask LLM to conclude from scratchpad
         conclude_prompt = (
@@ -195,7 +214,7 @@ class ReActAgent:
         return {
             "answer":       answer or "Reached step limit without a confident answer.",
             "trace":        trace,
-            "num_sources":  self._count_retrieved(trace),
+            "num_sources":  evidence_count,
             "total_tokens": total_tokens,
             "steps":        self.max_steps,
         }
@@ -203,10 +222,14 @@ class ReActAgent:
     # ── Simple RAG (no loop) ──────────────────────────────────────────────
 
     def _simple_rag(self, question: str) -> Dict[str, Any]:
-        context = self.pipeline.get_context(question)
+        docs = self.pipeline.retrieve(question)
+        context = "\n\n---\n\n".join(
+            f"[Source {i} | score={d['score']}]\n{d['content']}" for i, d in enumerate(docs, 1)
+        )
+        if not docs:
+            return {"answer": ABSTAIN, "trace": [], "num_sources": 0, "total_tokens": 0, "steps": 0}
         prompt  = SIMPLE_RAG_PROMPT.format(context=context, question=question)
         answer  = call_llm(self.llm, prompt)
-        docs    = self.pipeline.retrieve(question)
         return {
             "answer":       answer,
             "trace":        [],
@@ -214,8 +237,3 @@ class ReActAgent:
             "total_tokens": len(prompt) // 4 + len(answer) // 4,
             "steps":        1,
         }
-
-    # ── Helper ───────────────────────────────────────────────────────────
-
-    def _count_retrieved(self, trace: List[Dict]) -> int:
-        return sum(1 for s in trace if s["type"] == "observation")

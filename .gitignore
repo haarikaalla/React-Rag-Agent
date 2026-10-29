@@ -1,12 +1,6 @@
 __pycache__/
 *.py[cod]
-*.egg-info/
-.env
+.pytest_cache/
 .venv/
-venv/
-env/
+.streamlit/secrets.toml
 logs/
-*.jsonl
-.DS_Store
-*.faiss
-*.pkl

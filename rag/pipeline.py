@@ -4,16 +4,7 @@ Handles: document ingestion → chunking → embedding → FAISS indexing → re
 """
 
 from __future__ import annotations
-import io
 from typing import List, Dict, Any
-
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-try:
-    from langchain_huggingface import HuggingFaceEmbeddings
-except ImportError:
-    from langchain_community.embeddings import HuggingFaceEmbeddings  # fallback
-from langchain_community.vectorstores import FAISS
-from langchain_core.documents import Document
 
 
 def _extract_text(uploaded_file) -> str:
@@ -100,6 +91,9 @@ class RAGPipeline:
     # ── Private helpers ──────────────────────────────────────────────────
 
     def _split(self, text: str) -> List[Document]:
+        from langchain_core.documents import Document
+        from langchain_text_splitters import RecursiveCharacterTextSplitter
+
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
@@ -113,6 +107,13 @@ class RAGPipeline:
         ]
 
     def _build_index(self, chunks: List[Document]) -> None:
+        from langchain_community.vectorstores import FAISS
+
+        try:
+            from langchain_huggingface import HuggingFaceEmbeddings
+        except ImportError:
+            from langchain_community.embeddings import HuggingFaceEmbeddings
+
         if self._embeddings is None:
             self._embeddings = HuggingFaceEmbeddings(
                 model_name=self.EMBED_MODEL,

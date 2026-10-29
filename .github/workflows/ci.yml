@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.13']
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m pip install 'pytest>=8,<10'
+      - run: python -m pytest -q
+      - run: python -m compileall -q agent rag tools app.py
+
+  ui-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+      - run: python -m pip install 'streamlit>=1.35,<2'
+      - run: |
+          python -m streamlit run app.py --server.headless true --server.port 8501 &
+          APP_PID=$!
+          trap 'kill "$APP_PID" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --output /dev/null http://127.0.0.1:8501/_stcore/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
