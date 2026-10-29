@@ -46,21 +46,21 @@ with st.sidebar:
     provider = st.selectbox("Provider", ["Ollama (Local)", "OpenAI", "Groq"])
 
     if provider == "Ollama (Local)":
-        model_name = st.selectbox("Model", ["llama3", "mistral", "phi3", "gemma2"])
+        model_name = st.text_input("Model ID", value="llama3", help="Use a model installed in your Ollama service.")
         api_key = None
         base_url = st.text_input("Ollama URL", value="http://localhost:11434")
     elif provider == "OpenAI":
-        model_name = st.selectbox("Model", ["gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"])
+        model_name = st.text_input("Model ID", value="gpt-4o-mini")
         api_key = st.text_input("OpenAI API Key", type="password")
         base_url = None
     else:  # Groq
-        model_name = st.selectbox("Model", ["llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"])
+        model_name = st.text_input("Model ID", value="", placeholder="Enter a model available in your Groq account")
         api_key = st.text_input("Groq API Key", type="password")
         base_url = None
 
     st.subheader("RAG Settings")
-    chunk_size   = st.slider("Chunk Size",   128, 1024, 400, step=64)
-    chunk_overlap= st.slider("Chunk Overlap", 0,  256,  60,  step=16)
+    chunk_size   = st.slider("Chunk Size",   128, 1024, 400, step=16)
+    chunk_overlap= st.slider("Chunk Overlap", 0,  256,  60,  step=4)
     top_k        = st.slider("Top-K Docs",    1,  8,    3)
     max_steps    = st.slider("Max Agent Steps", 2, 8, 4)
 
@@ -109,15 +109,15 @@ for entry in st.session_state.chat_history:
             with st.expander("🧠 Agent Trace", expanded=False):
                 for step in entry["trace"]:
                     if step["type"] == "thought":
-                        st.markdown(f'<div class="thought-box">💭 <b>Thought:</b> {step["content"]}</div>', unsafe_allow_html=True)
+                        st.write("💭 Thought:", step["content"])
                     elif step["type"] == "action":
-                        st.markdown(f'<div class="action-box">⚡ <b>Action [{step.get("tool","")}]:</b> {step["content"]}</div>', unsafe_allow_html=True)
+                        st.write(f"⚡ Action [{step.get('tool', '')}]:", step["content"])
                     elif step["type"] == "observation":
-                        st.markdown(f'<div class="obs-box">👁️ <b>Observation:</b> {step["content"]}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="answer-box">✅ {entry["answer"]}</div>', unsafe_allow_html=True)
+                        st.write("👁️ Observation:", step["content"])
+        st.write("✅", entry["answer"])
         cols = st.columns(3)
         cols[0].caption(f"⏱ {entry.get('latency', 0):.2f}s")
-        cols[1].caption(f"📄 {entry.get('sources', 0)} sources")
+        cols[1].caption(f"📄 {entry.get('sources', 0)} retrievals")
         cols[2].caption(f"🔢 {entry.get('tokens', '—')} tokens")
 
 # Query input
@@ -152,16 +152,13 @@ else:
                         with trace_placeholder.expander("🧠 Agent Trace", expanded=True):
                             for step in result["trace"]:
                                 if step["type"] == "thought":
-                                    st.markdown(f'<div class="thought-box">💭 <b>Thought:</b> {step["content"]}</div>', unsafe_allow_html=True)
+                                    st.write("💭 Thought:", step["content"])
                                 elif step["type"] == "action":
-                                    st.markdown(f'<div class="action-box">⚡ <b>Action [{step.get("tool","")}]:</b> {step["content"]}</div>', unsafe_allow_html=True)
+                                    st.write(f"⚡ Action [{step.get('tool', '')}]:", step["content"])
                                 elif step["type"] == "observation":
-                                    st.markdown(f'<div class="obs-box">👁️ <b>Observation:</b> {step["content"]}</div>', unsafe_allow_html=True)
+                                    st.write("👁️ Observation:", step["content"])
 
-                    answer_placeholder.markdown(
-                        f'<div class="answer-box">✅ {result["answer"]}</div>',
-                        unsafe_allow_html=True,
-                    )
+                    answer_placeholder.write(result["answer"])
 
                     st.session_state.chat_history.append({
                         "question": query,

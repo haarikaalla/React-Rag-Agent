@@ -1,10 +1,17 @@
 # ReAct RAG Agent
 
-**Multi-step Retrieval-Augmented Generation with ReAct reasoning loop**
+**Inspect document answers and the retrieval steps behind them**
+
+[![CI](https://github.com/haarikaalla/React-Rag-Agent/actions/workflows/ci.yml/badge.svg)](https://github.com/haarikaalla/React-Rag-Agent/actions/workflows/ci.yml)
 
 > Thought → Action[tool] → Observation → … → Final Answer
 
-A production-grade agentic RAG system that goes beyond simple retrieve-then-answer. The agent *reasons* about what to retrieve, *selects* tools dynamically, *reflects* on observations, and iterates until it has enough evidence to give a grounded answer — all visible in real time.
+This project compares a single retrieval pass with a multi-step ReAct loop over
+an uploaded PDF or text document. The agent chooses retrieval tools, records
+observations, and shows the trace next to its answer. It abstains if retrieval
+returns no evidence or the model tries to answer before retrieving. An LLM can
+still make mistakes after seeing evidence, so check important answers against
+the source document.
 
 ---
 
@@ -32,6 +39,12 @@ User Query
                │
                ▼
          LLM (Ollama / OpenAI / Groq)
+
+The retrieval gate sits between the agent loop and its final answer: a final
+answer is displayed only after a successful retrieval observation. Simple RAG
+skips the model call entirely when no chunks are returned. The Streamlit UI
+renders document and model text as text, so uploaded content is not treated as
+HTML.
 ```
 
 **Key components:**
@@ -50,10 +63,10 @@ User Query
 | Reasoning | Single retrieve → answer | Multi-step Thought/Action loop |
 | Tool use | None | retrieve, summarise, clarify |
 | Trace visibility | Hidden | Full step-by-step UI |
-| Self-correction | No | Re-retrieves if first pass insufficient |
+| Retry path | No | Can use `clarify` to retrieve again |
 | LLM providers | One | Ollama, OpenAI, Groq |
 | Logging | None | JSONL session logs |
-| Tests | None | pytest suite |
+| Tests | None | 17 offline tests, including no-evidence behavior |
 | Docker | No | Yes |
 
 ---
@@ -63,15 +76,15 @@ User Query
 ### 1. Clone & install
 
 ```bash
-git clone https://github.com/haarikaalla/react-rag-agent.git
-cd react-rag-agent
+git clone https://github.com/haarikaalla/React-Rag-Agent.git
+cd React-Rag-Agent
 pip install -r requirements.txt
 ```
 
 ### 2. Run with Ollama (free, local)
 
 ```bash
-# Install Ollama: https://ollama.ai
+# Install Ollama from its official site and start its local service
 ollama pull llama3
 streamlit run app.py
 ```
@@ -95,7 +108,7 @@ docker run -p 8501:8501 react-rag-agent
 ### 5. Run tests
 
 ```bash
-pytest tests/ -v
+python -m pytest -q
 ```
 
 ---
@@ -108,6 +121,27 @@ pytest tests/ -v
 4. Type your question in the chat input
 5. Watch the agent's Thought → Action → Observation trace in real time
 6. Toggle **Simple RAG** mode to compare single-shot vs multi-step
+
+The UI displays the number of successful retrieval operations in ReAct mode.
+In Simple RAG mode it displays the number of returned chunks. The displayed
+token count is an estimate, not provider billing data.
+
+## Verification and limits
+
+The CI workflow runs the offline core tests on Python 3.10 and 3.13 and checks
+that Streamlit starts on Python 3.13. Its
+retrieval tests use a mock vector store, so they need no model download or API
+key. For an end-to-end check, install the full requirements, upload a short
+text file, build the knowledge base, ask a question it answers, then ask one it
+does not answer. A live provider and local embedding download are needed for
+that check; CI does not claim to exercise them.
+
+The ReAct trace is useful for inspection but is not a proof that each answer
+sentence is supported. This app has no document permission model or persisted vector index,
+or evaluation benchmark. Use approved providers and documents when sending
+private content to a cloud model. Ollama keeps inference local when configured
+against a local service. Queries and answers are written to local `logs/`
+JSONL files; treat them as sensitive when working with private documents.
 
 ---
 
@@ -124,7 +158,7 @@ pytest tests/ -v
 
 ## Tech Stack
 
-- **LangChain** — LLM orchestration, text splitting
+- **LangChain** — LLM calls and text splitting
 - **FAISS** — Vector similarity search
 - **Sentence Transformers** — Local embeddings (all-MiniLM-L6-v2)
 - **Streamlit** — UI and live trace display

@@ -16,6 +16,9 @@ def get_llm_client(
 ):
     """Factory: return the right LangChain LLM object."""
 
+    if not model_name or not model_name.strip():
+        raise ValueError("Enter a model ID available from the selected provider.")
+
     p = provider.lower()
 
     if "ollama" in p:

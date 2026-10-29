@@ -21,59 +21,36 @@ class TestRAGPipeline:
         assert p.num_chunks == 0
         assert p._vectorstore is None
 
-    @pytest.mark.skipif(
-        not __import__("socket").getaddrinfo.__module__ or True,  # skip in restricted envs
-        reason="Requires HuggingFace model download (needs internet)"
-    )
     def test_ingest_txt(self):
         p = self._make_pipeline()
-        content = (
-            "Artificial intelligence is the simulation of human intelligence. "
-            "Machine learning is a subset of AI that learns from data. "
-            "Deep learning uses neural networks with many layers. " * 20
-        )
+        content = "Machine learning learns from data."
         fake_file = MagicMock()
         fake_file.name = "test.txt"
         fake_file.read.return_value = content.encode("utf-8")
+        with patch.object(p, "_split", return_value=["chunk"]) as split, patch.object(p, "_build_index") as build:
+            p.ingest(fake_file)
+        split.assert_called_once_with(content)
+        build.assert_called_once_with(["chunk"])
+        assert p.num_chunks == 1
 
-        p.ingest(fake_file)
-        assert p.num_chunks > 0
-        assert p._vectorstore is not None
-
-    @pytest.mark.skipif(True, reason="Requires HuggingFace model download")
     def test_retrieve_after_ingest(self):
         p = self._make_pipeline()
-        content = (
-            "Python is a high-level programming language. "
-            "It is widely used in data science and machine learning. " * 20
-        )
-        fake_file = MagicMock()
-        fake_file.name = "test.txt"
-        fake_file.read.return_value = content.encode("utf-8")
-        p.ingest(fake_file)
-
+        doc = MagicMock(page_content="Python is a programming language.", metadata={"source": "test.txt"})
+        p._vectorstore = MagicMock()
+        p._vectorstore.similarity_search_with_score.return_value = [(doc, 0.2)]
         results = p.retrieve("What is Python?")
-        assert len(results) > 0
-        assert "content" in results[0]
-        assert "score" in results[0]
+        assert results == [{"content": "Python is a programming language.", "score": 0.2, "source": "test.txt"}]
 
     def test_retrieve_before_ingest_raises(self):
         p = self._make_pipeline()
         with pytest.raises(RuntimeError, match="not initialised"):
             p.retrieve("test query")
 
-    @pytest.mark.skipif(True, reason="Requires HuggingFace model download")
     def test_get_context_returns_string(self):
         p = self._make_pipeline()
-        content = "LangChain is a framework for building LLM applications. " * 30
-        fake_file = MagicMock()
-        fake_file.name = "test.txt"
-        fake_file.read.return_value = content.encode("utf-8")
-        p.ingest(fake_file)
-
+        p.retrieve = MagicMock(return_value=[{"content": "LangChain is a framework.", "score": 0.1}])
         ctx = p.get_context("What is LangChain?")
-        assert isinstance(ctx, str)
-        assert len(ctx) > 0
+        assert "LangChain is a framework." in ctx
 
 
 # ── Tool Registry ────────────────────────────────────────────────────────
@@ -141,6 +118,30 @@ class TestReActAgent:
         assert "answer" in result
         assert result["answer"] == "The sky is blue."
 
+    def test_simple_rag_abstains_without_retrieval(self):
+        from agent.react_agent import ABSTAIN
+        agent = self._make_agent("Invented answer", use_react=False)
+        agent.pipeline.retrieve.return_value = []
+        result = agent.run("What is not in the document?")
+        assert result["answer"] == ABSTAIN
+        assert result["num_sources"] == 0
+        agent.llm.invoke.assert_not_called()
+
+    def test_react_abstains_on_unsupported_final_answer(self):
+        from agent.react_agent import ABSTAIN
+        agent = self._make_agent("Thought: done.\nFinal Answer: Invented answer.")
+        result = agent.run("unknown?")
+        assert result["answer"] == ABSTAIN
+        assert result["num_sources"] == 0
+
+    def test_react_abstains_after_empty_retrieval(self):
+        from agent.react_agent import ABSTAIN
+        agent = self._make_agent("Action: retrieve\nAction Input: unknown")
+        agent.pipeline.retrieve.return_value = []
+        result = agent.run("unknown?")
+        assert result["answer"] == ABSTAIN
+        assert result["num_sources"] == 0
+
     def test_react_final_answer_parsed(self):
         llm_resp = (
             "Thought: I should retrieve information.\n"
@@ -205,3 +206,10 @@ class TestAgentLogger:
         assert summary["total_queries"] == 2
         assert summary["avg_latency_s"] == 1.0
         assert summary["total_tokens"] == 130
+
+
+def test_missing_model_id_has_clear_error():
+    from agent.llm_client import get_llm_client
+
+    with pytest.raises(ValueError, match="model ID"):
+        get_llm_client("Groq", "")
